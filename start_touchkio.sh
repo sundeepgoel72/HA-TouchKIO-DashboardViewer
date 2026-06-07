@@ -11,7 +11,7 @@ export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${XAUTHORITY:-/var/run/lightdm/root/:0}"
 
 KIOSK_BROWSER="${KIOSK_BROWSER:-touchkio}"
-KIOSK_URL="${KIOSK_URL:-http://192.168.1.72:8123/rpi-touch/view-1}"
+KIOSK_URL="${KIOSK_URL:-http://192.168.1.72:8123/rpi-touch/display}"
 KIOSK_WIDTH="${KIOSK_WIDTH:-1920}"
 KIOSK_HEIGHT="${KIOSK_HEIGHT:-1080}"
 KIOSK_X="${KIOSK_X:-0}"

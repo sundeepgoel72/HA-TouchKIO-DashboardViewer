@@ -15,7 +15,7 @@ FAIL_FILE="$STATE_DIR/fail-count"
 LOCK_FILE="$STATE_DIR/lock"
 LOG_FILE=/home/sundeep/touchkio-watchdog.log
 KIOSK_BROWSER="${KIOSK_BROWSER:-touchkio}"
-KIOSK_URL="${KIOSK_URL:-http://192.168.1.72:8123/rpi-touch/view-1}"
+KIOSK_URL="${KIOSK_URL:-http://192.168.1.72:8123/rpi-touch/display}"
 MAX_FAILS=2
 
 mkdir -p "$STATE_DIR"

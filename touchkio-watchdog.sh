@@ -25,7 +25,7 @@ MAX_FAILS=2
 mkdir -p "$STATE_DIR"
 
 ts() { date --iso-8601=seconds; }
-log() { 
+log() {
   local msg="$(ts) mode=$KIOSK_BROWSER $*"
   echo "$msg" >> "$LOG_FILE"
   # Also send to stdout so it appears in systemd journal
@@ -71,6 +71,10 @@ timeout_xdotool() {
   timeout 5 env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xdotool "$@" 2>/dev/null || true
 }
 
+timeout_xprop() {
+  timeout 5 env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xprop "$@" 2>/dev/null || true
+}
+
 WINDOW_COUNT=$(timeout_xdotool search --onlyvisible --class "$WINDOW_CLASS" | wc -l | tr -d ' ')
 if [ "$KIOSK_BROWSER" = "chromium" ] && [ "$WINDOW_COUNT" = "0" ]; then
   WINDOW_COUNT=$(timeout_xdotool search --onlyvisible --class Chromium | wc -l | tr -d ' ')
@@ -96,6 +100,9 @@ fi
 
 REASON=""
 WINDOW_ID=""
+WINDOW_NAME=""
+WINDOW_FULLSCREEN="unknown"
+WINDOW_GEOMETRY="unknown"
 if [ "$(systemctl --user is-active touchkio.service 2>/dev/null || true)" != "active" ]; then
   REASON="touchkio.service is not active"
 elif [ "$WINDOW_COUNT" != "1" ]; then
@@ -104,18 +111,23 @@ else
   # Get the window ID for detailed checks
   WINDOW_ID=$(timeout_xdotool search --onlyvisible --class "$WINDOW_CLASS" | head -n 1)
   if [ -n "$WINDOW_ID" ]; then
+    WINDOW_NAME=$(timeout_xdotool getwindowname "$WINDOW_ID" | head -n 1)
     # Check window geometry
     WINDOW_GEOM=$(timeout_xdotool getwindowgeometry --shell "$WINDOW_ID" 2>/dev/null || echo "WIDTH=0;HEIGHT=0;X=0;Y=0")
     eval "$WINDOW_GEOM"
-    
+    WINDOW_GEOMETRY="${WIDTH}x${HEIGHT}+${X}+${Y}"
+
+    WINDOW_STATES=$(timeout_xprop -id "$WINDOW_ID" _NET_WM_STATE)
+    if echo "$WINDOW_STATES" | grep -q "_NET_WM_STATE_FULLSCREEN"; then
+      WINDOW_FULLSCREEN="present"
+    else
+      WINDOW_FULLSCREEN="absent"
+    fi
+
     if [ "$WIDTH" != "$KIOSK_WIDTH" ] || [ "$HEIGHT" != "$KIOSK_HEIGHT" ] || [ "$X" != "$KIOSK_X" ] || [ "$Y" != "$KIOSK_Y" ]; then
       REASON="window geometry ${WIDTH}x${HEIGHT}+${X}+${Y} does not match expected ${KIOSK_WIDTH}x${KIOSK_HEIGHT}+${KIOSK_X}+${KIOSK_Y}"
-    else
-      # Check fullscreen state by getting the window state
-      WINDOW_STATES=$(timeout_xdotool getWindowState "$WINDOW_ID" 2>/dev/null | tr '\n' ' ' || true)
-      if ! echo "$WINDOW_STATES" | grep -q "_NET_WM_STATE_FULLSCREEN"; then
-        REASON="window is not in fullscreen state"
-      fi
+    elif [ "$WINDOW_FULLSCREEN" != "present" ]; then
+      REASON="window is not in fullscreen state"
     fi
   else
     REASON="could not get window ID for visible $WINDOW_CLASS window"
@@ -135,7 +147,7 @@ if [ -z "$REASON" ]; then
     log "health recovered; resetting fail count"
   fi
   set_fail_count 0
-  log "healthy window_count=$WINDOW_COUNT window_id=${WINDOW_ID:-unknown} root_pid=$ROOT_PID proc_count=$PROC_COUNT total_rss_kb=$TOTAL_RSS_KB"
+  log "healthy window_count=$WINDOW_COUNT window_id=${WINDOW_ID:-unknown} window_name=${WINDOW_NAME:-unknown} window_geometry=$WINDOW_GEOMETRY fullscreen=$WINDOW_FULLSCREEN root_pid=$ROOT_PID proc_count=$PROC_COUNT total_rss_kb=$TOTAL_RSS_KB"
   exit 0
 fi
 

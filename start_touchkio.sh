@@ -22,6 +22,14 @@ KIOSK_ZOOM="${KIOSK_ZOOM:-1.0}"
 TOUCHKIO_ENFORCE_FULLSCREEN="${TOUCHKIO_ENFORCE_FULLSCREEN:-true}"
 TOUCHKIO_FULLSCREEN_WAIT_SECONDS="${TOUCHKIO_FULLSCREEN_WAIT_SECONDS:-20}"
 
+timeout_xdotool() {
+  timeout 5 env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xdotool "$@" 2>/dev/null || true
+}
+
+timeout_wmctrl() {
+  timeout 5 env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" wmctrl "$@" 2>/dev/null || true
+}
+
 case "$KIOSK_BROWSER" in
   touchkio)
     TOUCHKIO_BIN="${TOUCHKIO_BIN:-/usr/bin/touchkio}"
@@ -45,7 +53,7 @@ case "$KIOSK_BROWSER" in
       echo "Waiting for TouchKIO window to appear..."
       WINDOW_ID=""
       for i in $(seq 1 $TOUCHKIO_FULLSCREEN_WAIT_SECONDS); do
-        WINDOW_ID=$(timeout 5 xdotool search --onlyvisible --class "$TOUCHKIO_WINDOW_CLASS" 2>/dev/null | head -n 1 || true)
+        WINDOW_ID=$(timeout_xdotool search --onlyvisible --class "$TOUCHKIO_WINDOW_CLASS" | head -n 1)
         if [ -n "$WINDOW_ID" ]; then
           break
         fi
@@ -54,11 +62,9 @@ case "$KIOSK_BROWSER" in
       
       if [ -n "$WINDOW_ID" ]; then
         echo "Found TouchKIO window: $WINDOW_ID"
-        # Move and resize window to proper dimensions
-        timeout 5 xdotool windowmove "$WINDOW_ID" "$KIOSK_X" "$KIOSK_Y" 2>/dev/null || true
-        timeout 5 xdotool windowsize "$WINDOW_ID" "$KIOSK_WIDTH" "$KIOSK_HEIGHT" 2>/dev/null || true
-        # Set fullscreen state
-        timeout 5 xdotool windowstate --add _NET_WM_STATE_FULLSCREEN "$WINDOW_ID" 2>/dev/null || true
+        # Move, resize, then request fullscreen using EWMH.
+        timeout_wmctrl -i -r "$WINDOW_ID" -e "0,$KIOSK_X,$KIOSK_Y,$KIOSK_WIDTH,$KIOSK_HEIGHT"
+        timeout_wmctrl -i -r "$WINDOW_ID" -b add,fullscreen
         echo "Applied fullscreen and geometry to TouchKIO window"
       else
         echo "Warning: Could not find TouchKIO window after $TOUCHKIO_FULLSCREEN_WAIT_SECONDS seconds"

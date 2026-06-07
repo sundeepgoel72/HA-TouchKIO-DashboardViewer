@@ -16,12 +16,20 @@ LOCK_FILE="$STATE_DIR/lock"
 LOG_FILE=/home/sundeep/touchkio-watchdog.log
 KIOSK_BROWSER="${KIOSK_BROWSER:-touchkio}"
 KIOSK_URL="${KIOSK_URL:-http://192.168.1.72:8123/rpi-touch/display}"
+KIOSK_WIDTH="${KIOSK_WIDTH:-1920}"
+KIOSK_HEIGHT="${KIOSK_HEIGHT:-1080}"
+KIOSK_X="${KIOSK_X:-0}"
+KIOSK_Y="${KIOSK_Y:-0}"
 MAX_FAILS=2
 
 mkdir -p "$STATE_DIR"
 
 ts() { date --iso-8601=seconds; }
-log() { echo "$(ts) mode=$KIOSK_BROWSER $*" >> "$LOG_FILE"; }
+log() { 
+  local msg="$(ts) mode=$KIOSK_BROWSER $*"
+  echo "$msg" >> "$LOG_FILE"
+  echo "$msg"
+}
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
@@ -57,9 +65,14 @@ case "$KIOSK_BROWSER" in
     ;;
 esac
 
-WINDOW_COUNT=$( (xdotool search --onlyvisible --class "$WINDOW_CLASS" 2>/dev/null || true) | wc -l | tr -d ' ')
+# Use timeout for X11 commands to prevent hanging
+timeout_xdotool() {
+  timeout 5 env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" xdotool "$@" 2>/dev/null || true
+}
+
+WINDOW_COUNT=$(timeout_xdotool search --onlyvisible --class "$WINDOW_CLASS" | wc -l | tr -d ' ')
 if [ "$KIOSK_BROWSER" = "chromium" ] && [ "$WINDOW_COUNT" = "0" ]; then
-  WINDOW_COUNT=$( (xdotool search --onlyvisible --class Chromium 2>/dev/null || true) | wc -l | tr -d ' ')
+  WINDOW_COUNT=$(timeout_xdotool search --onlyvisible --class Chromium | wc -l | tr -d ' ')
 fi
 
 read -r ROOT_PID MARKER_RSS_KB MARKER_PROC_COUNT <<EOF_METRICS
@@ -81,15 +94,40 @@ else
 fi
 
 REASON=""
+WINDOW_ID=""
 if [ "$(systemctl --user is-active touchkio.service 2>/dev/null || true)" != "active" ]; then
   REASON="touchkio.service is not active"
 elif [ "$WINDOW_COUNT" != "1" ]; then
   REASON="expected 1 visible $WINDOW_CLASS window, found $WINDOW_COUNT"
-elif [ -z "${ROOT_PID:-}" ]; then
+else
+  # Get the window ID for detailed checks
+  WINDOW_ID=$(timeout_xdotool search --onlyvisible --class "$WINDOW_CLASS" | head -n 1)
+  if [ -n "$WINDOW_ID" ]; then
+    # Check window geometry
+    WINDOW_GEOM=$(timeout_xdotool getwindowgeometry --shell "$WINDOW_ID" 2>/dev/null || echo "WIDTH=0;HEIGHT=0;X=0;Y=0")
+    eval "$WINDOW_GEOM"
+    
+    if [ "$WIDTH" != "$KIOSK_WIDTH" ] || [ "$HEIGHT" != "$KIOSK_HEIGHT" ] || [ "$X" != "$KIOSK_X" ] || [ "$Y" != "$KIOSK_Y" ]; then
+      REASON="window geometry ${WIDTH}x${HEIGHT}+${X}+${Y} does not match expected ${KIOSK_WIDTH}x${KIOSK_HEIGHT}+${KIOSK_X}+${KIOSK_Y}"
+    else
+      # Check fullscreen state
+      WINDOW_STATE=$(timeout_xdotool search --onlyvisible --class "$WINDOW_CLASS" getwindowname 2>&1 || true)
+      # Try to get window state
+      WINDOW_STATES=$(timeout_xdotool search --onlyvisible --class "$WINDOW_CLASS" getWindowState 2>/dev/null | tr '\n' ' ' || true)
+      if ! echo "$WINDOW_STATES" | grep -q "_NET_WM_STATE_FULLSCREEN"; then
+        REASON="window is not in fullscreen state"
+      fi
+    fi
+  else
+    REASON="could not get window ID for visible $WINDOW_CLASS window"
+  fi
+fi
+
+if [ -z "$REASON" ] && [ -z "${ROOT_PID:-}" ]; then
   REASON="root kiosk process for $KIOSK_URL not found"
-elif [ "${PROC_COUNT:-0}" -eq 0 ]; then
+elif [ -z "$REASON" ] && [ "${PROC_COUNT:-0}" -eq 0 ]; then
   REASON="no kiosk processes found for marker $MARKER"
-elif [ "${TOTAL_RSS_KB:-0}" -gt "$MAX_RSS_KB" ]; then
+elif [ -z "$REASON" ] && [ "${TOTAL_RSS_KB:-0}" -gt "$MAX_RSS_KB" ]; then
   REASON="kiosk RSS ${TOTAL_RSS_KB}KB exceeds ${MAX_RSS_KB}KB"
 fi
 
@@ -98,7 +136,7 @@ if [ -z "$REASON" ]; then
     log "health recovered; resetting fail count"
   fi
   set_fail_count 0
-  log "healthy window_count=$WINDOW_COUNT root_pid=$ROOT_PID proc_count=$PROC_COUNT total_rss_kb=$TOTAL_RSS_KB"
+  log "healthy window_count=$WINDOW_COUNT window_id=${WINDOW_ID:-unknown} root_pid=$ROOT_PID proc_count=$PROC_COUNT total_rss_kb=$TOTAL_RSS_KB"
   exit 0
 fi
 

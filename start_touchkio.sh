@@ -18,18 +18,55 @@ KIOSK_X="${KIOSK_X:-0}"
 KIOSK_Y="${KIOSK_Y:-0}"
 KIOSK_ZOOM="${KIOSK_ZOOM:-1.0}"
 
+# Configurable fullscreen enforcement for TouchKIO
+TOUCHKIO_ENFORCE_FULLSCREEN="${TOUCHKIO_ENFORCE_FULLSCREEN:-true}"
+TOUCHKIO_FULLSCREEN_WAIT_SECONDS="${TOUCHKIO_FULLSCREEN_WAIT_SECONDS:-20}"
+
 case "$KIOSK_BROWSER" in
   touchkio)
     TOUCHKIO_BIN="${TOUCHKIO_BIN:-/usr/bin/touchkio}"
     TOUCHKIO_USER_DATA_DIR="${TOUCHKIO_USER_DATA_DIR:-/home/sundeep/.touchkio1}"
     TOUCHKIO_WEB_WIDGET="${TOUCHKIO_WEB_WIDGET:-false}"
-    exec "$TOUCHKIO_BIN" \
+    
+    # Launch TouchKIO in background so we can apply window management
+    "$TOUCHKIO_BIN" \
       --web-url="$KIOSK_URL" \
       --user-data-dir="$TOUCHKIO_USER_DATA_DIR" \
       --window-x="$KIOSK_X" --window-y="$KIOSK_Y" \
       --window-width="$KIOSK_WIDTH" --window-height="$KIOSK_HEIGHT" \
       --web-zoom="$KIOSK_ZOOM" \
-      --web-widget="$TOUCHKIO_WEB_WIDGET"
+      --web-widget="$TOUCHKIO_WEB_WIDGET" &
+    
+    TOUCHKIO_PID=$!
+    
+    # Enforce fullscreen and proper geometry if enabled
+    if [ "$TOUCHKIO_ENFORCE_FULLSCREEN" = "true" ]; then
+      echo "Waiting for TouchKIO window to appear..."
+      WINDOW_ID=""
+      for i in $(seq 1 $TOUCHKIO_FULLSCREEN_WAIT_SECONDS); do
+        WINDOW_ID=$(timeout 5 xdotool search --onlyvisible --class "$TOUCHKIO_WINDOW_CLASS" 2>/dev/null | head -n 1 || true)
+        if [ -n "$WINDOW_ID" ]; then
+          break
+        fi
+        sleep 1
+      done
+      
+      if [ -n "$WINDOW_ID" ]; then
+        echo "Found TouchKIO window: $WINDOW_ID"
+        # Move and resize window to proper dimensions
+        timeout 5 xdotool windowmove "$WINDOW_ID" "$KIOSK_X" "$KIOSK_Y" 2>/dev/null || true
+        timeout 5 xdotool windowsize "$WINDOW_ID" "$KIOSK_WIDTH" "$KIOSK_HEIGHT" 2>/dev/null || true
+        # Set fullscreen state
+        timeout 5 xdotool windowstate --add _NET_WM_STATE_FULLSCREEN "$WINDOW_ID" 2>/dev/null || true
+        echo "Applied fullscreen and geometry to TouchKIO window"
+      else
+        echo "Warning: Could not find TouchKIO window after $TOUCHKIO_FULLSCREEN_WAIT_SECONDS seconds"
+      fi
+    fi
+    
+    # Wait for TouchKIO process to complete and return its exit code
+    wait "$TOUCHKIO_PID"
+    exit $?
     ;;
   chromium)
     CHROMIUM_BIN="${CHROMIUM_BIN:-auto}"

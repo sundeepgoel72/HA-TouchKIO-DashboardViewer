@@ -112,7 +112,7 @@ else
       REASON="window geometry ${WIDTH}x${HEIGHT}+${X}+${Y} does not match expected ${KIOSK_WIDTH}x${KIOSK_HEIGHT}+${KIOSK_X}+${KIOSK_Y}"
     else
       # Check fullscreen state
-      WINDOW_STATES=$(timeout_xdotool search --onlyvisible --class "$WINDOW_CLASS" getWindowState 2>/dev/null | tr '\n' ' ' || true)
+      WINDOW_STATES=$(timeout_xdotool getWindowState "$WINDOW_ID" 2>/dev/null | tr '\n' ' ' || true)
       if ! echo "$WINDOW_STATES" | grep -q "_NET_WM_STATE_FULLSCREEN"; then
         REASON="window is not in fullscreen state"
       fi

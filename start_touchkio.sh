@@ -27,6 +27,7 @@ case "$KIOSK_BROWSER" in
     TOUCHKIO_BIN="${TOUCHKIO_BIN:-/usr/bin/touchkio}"
     TOUCHKIO_USER_DATA_DIR="${TOUCHKIO_USER_DATA_DIR:-/home/sundeep/.touchkio1}"
     TOUCHKIO_WEB_WIDGET="${TOUCHKIO_WEB_WIDGET:-false}"
+    TOUCHKIO_WINDOW_CLASS="${TOUCHKIO_WINDOW_CLASS:-touchkio}"
     
     # Launch TouchKIO in background so we can apply window management
     "$TOUCHKIO_BIN" \

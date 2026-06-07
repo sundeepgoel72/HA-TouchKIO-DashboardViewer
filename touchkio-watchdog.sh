@@ -28,6 +28,7 @@ ts() { date --iso-8601=seconds; }
 log() { 
   local msg="$(ts) mode=$KIOSK_BROWSER $*"
   echo "$msg" >> "$LOG_FILE"
+  # Also send to stdout so it appears in systemd journal
   echo "$msg"
 }
 

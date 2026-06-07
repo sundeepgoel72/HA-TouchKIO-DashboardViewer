@@ -1,0 +1,8 @@
+[Unit]
+Description=TouchKIO health watchdog
+
+[Service]
+Type=oneshot
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/var/run/lightdm/root/:0
+ExecStart=/home/sundeep/touchkio-watchdog.sh

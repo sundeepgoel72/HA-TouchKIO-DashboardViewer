@@ -1,0 +1,17 @@
+[Unit]
+Description=Kiosk browser app (TouchKIO or Chromium)
+After=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+StartLimitAction=none
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/var/run/lightdm/root/:0
+ExecStart=/usr/local/bin/start_touchkio.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
